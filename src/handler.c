@@ -39,6 +39,9 @@ file_read(struct unpfs_fid *fid, char **buf, size_t count, uint64_t offset)
         return -1;
     }
 
+    if (lseek(fh->fd, offset, SEEK_SET) == (off_t)-1)
+        return -1;
+
     return read(fh->fd, *buf, count);
 }
 
@@ -46,6 +49,9 @@ static ssize_t
 file_write(struct unpfs_fid *fid, const void *buf, size_t count, uint64_t offset)
 {
     struct file_handle *fh = fid->priv;
+
+    if (lseek(fh->fd, offset, SEEK_SET) == (off_t)-1)
+        return -1;
 
     return write(fh->fd, buf, count);
 }
