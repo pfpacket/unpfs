@@ -16,8 +16,12 @@ zalloc(size_t size)
 void
 zfree(char **m)
 {
+    int err = errno;
+
     if (m && *m) {
         free(*m);
         *m = NULL;
     }
+
+    errno = err;
 }

@@ -1,5 +1,6 @@
 
 #include <unpfs/ops.h>
+#include <unpfs/log.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -71,7 +72,7 @@ signal_handler(int signum)
 static void
 unpfs_preselect(IxpServer *server)
 {
-    ctx.server.running = running;
+    server->running = running;
 }
 
 int
@@ -112,16 +113,17 @@ main(int argc, char **argv)
 
     ctx.server.preselect = unpfs_preselect;
 
-    printf("[*] Ready to accept 9P clients\n"
-           "    Trans : %s\n"
-           "    Root  : %s\n",
-           argv[1], ctx.root);
+    unpfs_log(LOG_NOTICE,
+            "Ready to accept 9P clients\n"
+            "    Trans : %s\n"
+            "    Root  : %s\n",
+            argv[1], ctx.root);
 
     /* Server main loop */
     ret = ixp_serverloop(&ctx.server);
 
     ixp_server_close(&ctx.server);
-    printf("\n[*] Server caught signal: %d\n", signal_num);
+    unpfs_log(LOG_INFO, "\n[*] Server caught signal: %d\n", signal_num);
 
     return ret;
 }

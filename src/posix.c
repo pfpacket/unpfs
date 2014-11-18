@@ -32,9 +32,9 @@ perm_9p_to_posix(uint32_t perm)
     mode_t mode = 0;
 
     if (perm & P9_DMDIR)
-        mode = perm & (~0666 | (/*dir.perm &*/ 0666));
+        mode = 0777777777;
     else
-        mode = perm & (~0777 | (/*dir.perm &*/ 0777));
+        mode = 0777777777;
 
     return mode;
 }

@@ -1,15 +1,17 @@
 
 #include <unpfs/ops.h>
 #include <unpfs/fid.h>
+#include <unpfs/log.h>
 #include <unpfs/posix.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 #include <fcntl.h>
 #include <libgen.h> /* For POSIX basename(3) */
-#include <syslog.h>
 
 struct ixp_context ctx;
 
@@ -25,11 +27,13 @@ get_real_path(const char *path)
     int path_is_root = !strcmp(path, "/");
     size_t length =
         (root_is_root ? 0 : strlen(ctx.root)) +
-        (path_is_root ? 0 : strlen(path)) + 1;
+        1 +(path_is_root ? 0 : strlen(path) + 1);
     char *real_path = zalloc(length);
 
-    n = snprintf(real_path, length, "%s%s",
-        (root_is_root ? "" : ctx.root), (path_is_root ? "" : path));
+    n = snprintf(real_path, length, "%s%s%s",
+        (root_is_root ? "" : ctx.root),
+        (*path == '/' ? "" : "/"),
+        (path_is_root ? "" : path));
     if (n < 0)
         zfree(&real_path);
 
@@ -47,6 +51,11 @@ respond(Ixp9Req *r, int err)
             msg = "Input/output error";
         else
             msg = buf;
+
+        unpfs_log(LOG_ERR, "respond: type=%u tag=%u fid=%u: %s\n",
+            r->ifcall.hdr.type,
+            r->ifcall.hdr.tag,
+            r->ifcall.hdr.fid, msg);
     }
 
     ixp_respond(r, msg);
@@ -59,7 +68,7 @@ respond(Ixp9Req *r, int err)
  */
 
 /*
- * session class
+ * Session Management
  */
 void
 unpfs_attach(Ixp9Req *r)
@@ -79,23 +88,14 @@ unpfs_attach(Ixp9Req *r)
 
         fid = unpfs_fid_new("/", r->fid->qid.type);
         r->fid->aux = fid;
-        fprintf(stderr, "[*] %s: Accepted a new 9P client: fid->path=%s fid->real_path=%s\n",
-            __func__, fid->path, fid->real_path);
+
+        unpfs_log(LOG_NOTICE, "%s: New 9P client: uname=%s aname=%s\n",
+            __func__, r->ifcall.tattach.uname, r->ifcall.tattach.aname);
     }
 
     respond(r, ret);
 }
 
-void
-unpfs_flush(Ixp9Req *r)
-{
-    respond(r, 0);
-}
-
-
-/*
- * file class
- */
 void
 unpfs_walk(Ixp9Req *r)
 {
@@ -133,11 +133,16 @@ unpfs_walk(Ixp9Req *r)
         }
     }
 
+    if (r->fid->fid == r->newfid->fid) {
+        unpfs_log(LOG_INFO, "%s: fid and newfid equals: fid=%u newfid=%u\n",
+            __func__, r->fid->fid, r->newfid->fid);
+    }
+
     r->newfid->aux = r->ifcall.twalk.nwname ?
         unpfs_fid_new(path, r->ofcall.rwalk.wqid[i - 1].type) :
         unpfs_fid_clone(fid);
 
-    fprintf(stderr, "%s: newfid: fid=%u fid->path=%s fid->real_path=%s\n",
+    unpfs_log(LOG_INFO, "%s: newfid: fid=%u fid->path=%s fid->real_path=%s\n",
         __func__,
         r->newfid->fid,
         ((struct unpfs_fid *)(r->newfid->aux))->path,
@@ -152,72 +157,29 @@ out:
 }
 
 void
-unpfs_create(Ixp9Req *r)
+unpfs_flush(Ixp9Req *r)
 {
-    int ret = 0;
-    struct stat stbuf;
-    char *new_real_path = zalloc(PATH_MAX);
-    struct unpfs_fid *fid = r->fid->aux;
-    mode_t mode = perm_9p_to_posix(r->ifcall.tcreate.perm);
-
-    snprintf(new_real_path, PATH_MAX, "%s%s/%s",
-        (!strcmp(ctx.root, "/") ? "" : ctx.root),
-        (!strcmp(fid->path, "/") ? "" : fid->path),
-        r->ifcall.tcreate.name);
-
-    fprintf(stderr, "%s: fid->path=%s new_real_path=%s\n",
-        __func__, fid->path, new_real_path);
-
-
-    zfree(&fid->path);
-    zfree(&fid->real_path);
-    fid->path = strdup(new_real_path + strlen(ctx.root));
-    fid->real_path = strdup(new_real_path);
-    fid->type = (r->ifcall.tcreate.perm & P9_DMDIR ? P9_QTDIR : P9_QTFILE);
-    fid->handler =
-        (fid->type & P9_QTDIR ?
-            &dir_handler :
-            &file_handler);
-
-    ret = fid->handler->open(fid, new_real_path, O_CREAT, mode);
-    if (ret < 0) {
-        ret = errno;
-        goto out;
-    }
-
-    if (lstat(new_real_path, &stbuf) < 0) {
-        ret = errno;
-    } else {
-        zfree(&fid->path);
-        r->fid->qid.path = stbuf.st_ino;
-        r->fid->qid.type = stbuf.st_mode & S_IFMT;
-    }
-
-out:
-    zfree(&new_real_path);
-    respond(r, ret);
-}
-
-void
-unpfs_remove(Ixp9Req *r)
-{
-    int ret = 0;
     struct unpfs_fid *fid = r->fid->aux;
 
-    ret = fid->handler->remove(fid);
-    if (ret < 0)
-        ret = errno;
+    unpfs_log(LOG_INFO, "%s: fid=%u real_path=%s\n",
+        __func__, r->fid->fid, fid->real_path);
 
-    respond(r, ret);
+    respond(r, 0);
 }
 
 
+/*
+ * File I/O
+ */
 void
 unpfs_open(Ixp9Req *r)
 {
     int ret = 0;
     int flags = 0;
     struct unpfs_fid *fid = r->fid->aux;
+
+    unpfs_log(LOG_NOTICE, "%s: fid=%u real_path=%s\n",
+        __func__, r->fid->fid, fid->real_path);
 
     flags = open_mode_9p_to_posix(r->ifcall.topen.mode);
 
@@ -229,11 +191,63 @@ unpfs_open(Ixp9Req *r)
 }
 
 void
+unpfs_create(Ixp9Req *r)
+{
+    int ret = 0;
+    struct stat stbuf;
+    struct unpfs_fid *fid = r->fid->aux;
+    char *new_real_path = zalloc(PATH_MAX);
+    mode_t mode = perm_9p_to_posix(r->ifcall.tcreate.perm);
+    int flags = open_mode_9p_to_posix(r->ifcall.topen.mode) | O_CREAT;
+
+    unpfs_log(LOG_NOTICE, "%s: fid=%u real_path=%s\n",
+        __func__, r->fid->fid, fid->real_path);
+
+    snprintf(new_real_path, PATH_MAX, "%s/%s",
+        (!strcmp(fid->real_path, "/") ? "" : fid->real_path),
+        r->ifcall.tcreate.name);
+
+    zfree(&fid->path);
+    zfree(&fid->real_path);
+    fid->path = strdup(new_real_path + strlen(ctx.root));
+    fid->real_path = strdup(new_real_path);
+    fid->type = (r->ifcall.tcreate.perm & P9_DMDIR ? P9_QTDIR : P9_QTFILE);
+    fid->handler =
+        (fid->type & P9_QTDIR ?
+            &dir_handler :
+            &file_handler);
+
+    ret = fid->handler->open(fid, new_real_path, flags, mode);
+    if (ret < 0) {
+        ret = errno;
+        goto out;
+    }
+
+    if (lstat(new_real_path, &stbuf) < 0) {
+        ret = errno;
+    } else {
+        r->fid->qid.type = fid->type;
+        r->fid->qid.version = 0;
+        r->fid->qid.path = stbuf.st_ino;
+    }
+
+out:
+    zfree(&new_real_path);
+    respond(r, ret);
+}
+
+void
 unpfs_read(Ixp9Req *r)
 {
     int ret = 0;
     ssize_t count;
     struct unpfs_fid *fid = r->fid->aux;
+
+    unpfs_log(LOG_NOTICE, "%s: fid=%u real_path=%s count=%d offset=%lu\n",
+        __func__, r->fid->fid,
+        fid->real_path,
+        r->ifcall.twrite.count,
+        r->ifcall.twrite.offset);
 
     count = fid->handler->read(
         fid,
@@ -257,9 +271,15 @@ unpfs_write(Ixp9Req *r)
     ssize_t count;
     struct unpfs_fid *fid = r->fid->aux;
 
+    unpfs_log(LOG_NOTICE, "%s: fid=%u real_path=%s count=%d offset=%lu\n",
+        __func__, r->fid->fid,
+        fid->real_path,
+        r->ifcall.twrite.count,
+        r->ifcall.twrite.offset);
+
     count = fid->handler->write(
         fid,
-        r->ofcall.rwrite.data,
+        r->ifcall.twrite.data,
         r->ifcall.twrite.count,
         r->ifcall.twrite.offset
     );
@@ -273,19 +293,39 @@ unpfs_write(Ixp9Req *r)
 }
 
 void
+unpfs_remove(Ixp9Req *r)
+{
+    int ret = 0;
+    struct unpfs_fid *fid = r->fid->aux;
+
+    unpfs_log(LOG_NOTICE, "%s: fid=%u real_path=%s\n",
+        __func__, r->fid->fid, fid->real_path);
+
+    ret = fid->handler->remove(fid);
+    if (ret < 0)
+        ret = errno;
+
+    respond(r, ret);
+}
+
+void
 unpfs_clunk(Ixp9Req *r)
 {
     struct unpfs_fid *fid = r->fid->aux;
 
-    if (fid && fid->handler)
+    if (fid && fid->handler) {
+        unpfs_log(LOG_NOTICE, "%s: fid=%u real_path=%s\n",
+            __func__, r->fid->fid, fid->real_path);
+
         fid->handler->close(fid);
+    }
 
     respond(r, 0);
 }
 
 
 /*
- * metadata class
+ * Metadata Management
  */
 void
 unpfs_stat(Ixp9Req *r)
@@ -297,6 +337,9 @@ unpfs_stat(Ixp9Req *r)
     IxpMsg m;
     struct IxpStat s;
     char *buf, *name = strdup(fid->path);
+
+    unpfs_log(LOG_NOTICE, "%s: fid=%u real_path=%s\n",
+        __func__, r->fid->fid, fid->real_path);
 
     if (!name || lstat(fid->real_path, &stbuf) < 0) {
         ret = errno;
@@ -320,10 +363,124 @@ out:
     respond(r, ret);
 }
 
+static int
+unpfs_rename(struct unpfs_fid *fid, IxpStat *stat)
+{
+    int ret = 0, count;
+    char new_real_path[PATH_MAX];
+    char *real_parent = NULL;
+
+    /* No need to name */
+    if (!strlen(stat->name))
+        goto out;
+
+    if (!(real_parent = strdup(fid->real_path))) {
+        ret = -1;
+        goto out;
+    }
+
+    count = snprintf(new_real_path, sizeof new_real_path,
+        "%s/%s", dirname(real_parent), stat->name);
+    if (count < 0) {
+        ret = -1;
+        goto out;
+    }
+
+    unpfs_log(LOG_INFO, "%s: renaming %s to %s\n",
+        __func__, fid->real_path, new_real_path);
+
+    /* No need to rename */
+    if (!strcmp(fid->real_path, new_real_path))
+        goto out;
+
+    if (rename(fid->real_path, new_real_path) < 0) {
+        ret = -1;
+        goto out;
+    }
+
+    fid->real_path = strdup(new_real_path);
+
+out:
+    zfree(&real_parent);
+    return ret;
+}
+
+static int 
+unpfs_utimes(struct unpfs_fid *fid, IxpStat *stat)
+{
+    struct timeval times[2];
+
+    if (stat->atime == UINT32_MAX || stat->mtime == UINT32_MAX)
+        return 0;
+
+    memset(times, 0, sizeof times);
+
+    times[0].tv_sec = stat->atime;
+    times[1].tv_sec = stat->mtime;
+
+    return utimes(fid->real_path, times);
+}
+
+static int
+unpfs_truncate(struct unpfs_fid *fid, IxpStat *stat)
+{
+    return stat->length == UINT64_MAX ?
+        0 : truncate(fid->real_path, stat->length);
+}
+
+static int
+stat_is_sync_request(const struct IxpStat *stat)
+{
+    int i = 0;
+    int len = sizeof (*stat) - (sizeof (char *) * 4);
+
+    for (; i < len; ++i) {
+        if (((uint8_t *)stat)[i] != UINT8_MAX)
+            return 0;
+    }
+
+    return 1;
+}
+
 void
 unpfs_wstat(Ixp9Req *r)
 {
-    respond(r, 0);
+    int ret = 0;
+    struct stat stbuf;
+    struct unpfs_fid *fid = r->fid->aux;
+    IxpStat *stat = &r->ifcall.twstat.stat;
+
+    unpfs_log(LOG_NOTICE, "%s: fid=%u real_path=%s stat->name=%s\n",
+        __func__, r->fid->fid, fid->real_path, stat->name);
+
+    if (stat_is_sync_request(stat)) {
+        unpfs_log(LOG_INFO, "%s: syncing...\n", __func__);
+        sync();
+        goto out;
+    }
+
+    if (unpfs_rename(fid, stat) < 0) {
+        ret = errno;
+        goto out;
+    }
+
+    if (lstat(fid->real_path, &stbuf) < 0) {
+        ret = errno;
+        goto out;
+    }
+
+    if (unpfs_utimes(fid, stat) < 0) {
+        ret = errno;
+        goto out;
+    }
+
+    if (unpfs_truncate(fid, stat) < 0) {
+        ret = errno;
+        goto out;
+    }
+
+out:
+    respond(r, ret);
 }
 
 void
@@ -331,7 +488,7 @@ unpfs_freefid(IxpFid *f)
 {
     struct unpfs_fid *fid = f->aux;
     if (fid) {
-        fprintf(stderr, "%s: fid=%u fid->path=%s\n",
+        unpfs_log(LOG_INFO, "%s: fid=%u fid->path=%s\n",
             __func__, f->fid, fid->path);
         unpfs_fid_destroy(fid);
     }
