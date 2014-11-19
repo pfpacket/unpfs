@@ -113,6 +113,7 @@ main(int argc, char **argv)
 
     ctx.server.preselect = unpfs_preselect;
 
+    unpfs_log_level(LOG_NOTICE);
     unpfs_log(LOG_NOTICE,
             "Ready to accept 9P clients\n"
             "    Trans : %s\n"

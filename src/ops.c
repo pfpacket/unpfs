@@ -13,6 +13,8 @@
 #include <fcntl.h>
 #include <libgen.h> /* For POSIX basename(3) */
 
+#define UNPFS_IOUNIT (1024 * 1024 * 1024)
+
 struct ixp_context ctx;
 
 enum {
@@ -186,6 +188,8 @@ unpfs_open(Ixp9Req *r)
     ret = fid->handler->open(fid, NULL, flags, 0);
     if (ret < 0)
         ret = errno;
+    else
+        r->ifcall.ropen.iounit = UNPFS_IOUNIT;
 
     respond(r, ret);
 }
@@ -231,6 +235,8 @@ unpfs_create(Ixp9Req *r)
         r->fid->qid.path = stbuf.st_ino;
     }
 
+    r->ifcall.rcreate.iounit = UNPFS_IOUNIT;
+
 out:
     zfree(&new_real_path);
     respond(r, ret);
@@ -243,7 +249,7 @@ unpfs_read(Ixp9Req *r)
     ssize_t count;
     struct unpfs_fid *fid = r->fid->aux;
 
-    unpfs_log(LOG_NOTICE, "%s: fid=%u real_path=%s count=%d offset=%lu\n",
+    unpfs_log(/*LOG_NOTICE*/LOG_INFO, "%s: fid=%u real_path=%s count=%d offset=%lu\n",
         __func__, r->fid->fid,
         fid->real_path,
         r->ifcall.twrite.count,

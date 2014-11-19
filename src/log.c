@@ -5,7 +5,7 @@
 #include <signal.h>
 #include <syslog.h>
 
-static volatile sig_atomic_t unpfs_log_pri = 0;
+static volatile sig_atomic_t unpfs_log_pri = 7;
 
 int
 unpfs_log_level(int level)
@@ -20,7 +20,7 @@ unpfs_log_level(int level)
 void
 unpfs_log(int pri, const char *fmt, ...)
 {
-    if (unpfs_log_pri <= pri) {
+    if (pri <= unpfs_log_pri) {
         va_list ap;
 
         va_start(ap, fmt);
