@@ -23,6 +23,7 @@ extern void unpfs_open(Ixp9Req *r);
 extern void unpfs_read(Ixp9Req *r);
 extern void unpfs_remove(Ixp9Req *r);
 extern void unpfs_stat(Ixp9Req *r);
+extern void unpfs_version(Ixp9Req *r);
 extern void unpfs_walk(Ixp9Req *r);
 extern void unpfs_write(Ixp9Req *r);
 extern void unpfs_wstat(Ixp9Req *r);

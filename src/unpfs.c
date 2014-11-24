@@ -93,6 +93,7 @@ main(int argc, char **argv)
     srv.read    = unpfs_read;
     srv.remove  = unpfs_remove;
     srv.stat    = unpfs_stat;
+    srv.version = unpfs_version;
     srv.walk    = unpfs_walk;
     srv.write   = unpfs_write;
     srv.wstat   = unpfs_wstat;
@@ -113,18 +114,16 @@ main(int argc, char **argv)
 
     ctx.server.preselect = unpfs_preselect;
 
-    unpfs_log_level(LOG_NOTICE);
+    /*unpfs_log_level(LOG_NOTICE);*/
     unpfs_log(LOG_NOTICE,
-            "Ready to accept 9P clients\n"
-            "    Trans : %s\n"
-            "    Root  : %s\n",
-            argv[1], ctx.root);
+        "Ready to accept 9P clients: trans=%s root=%s",
+        __func__, argv[0], ctx.root);
 
     /* Server main loop */
     ret = ixp_serverloop(&ctx.server);
 
     ixp_server_close(&ctx.server);
-    unpfs_log(LOG_INFO, "\n[*] Server caught signal: %d\n", signal_num);
+    unpfs_log(LOG_NOTICE, "[*] Server caught signal: %d", signal_num);
 
     return ret;
 }

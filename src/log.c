@@ -27,6 +27,7 @@ unpfs_log(int pri, const char *fmt, ...)
 
         fprintf(stderr, "[%d] ", pri);
         vfprintf(stderr, fmt, ap);
+        fputs("\n", stderr);
 
         va_end(ap);
     }
