@@ -1,0 +1,63 @@
+diff --git a/include/ixp.h b/include/ixp.h
+--- a/include/ixp.h
++++ b/include/ixp.h
+@@ -2,6 +2,9 @@
+  * See LICENSE file for license details.
+  */
+ 
++#ifndef IXP_H_INCLUDED
++#define IXP_H_INCLUDED
++
+ #include <stdarg.h>
+ #include <stdint.h>
+ #include <sys/types.h>
+@@ -660,6 +663,7 @@
+ 	void (*read)(Ixp9Req*);
+ 	void (*remove)(Ixp9Req*);
+ 	void (*stat)(Ixp9Req*);
++	void (*version)(Ixp9Req*);
+ 	void (*walk)(Ixp9Req*);
+ 	void (*write)(Ixp9Req*);
+ 	void (*wstat)(Ixp9Req*);
+@@ -818,3 +822,4 @@
+ uint	ixp_strlcat(char*, const char*, uint);
+ uint	ixp_tokenize(char**, uint len, char*, char);
+ 
++#endif  /* IXP_H_INCLUDED */
+diff --git a/lib/libixp/request.c b/lib/libixp/request.c
+--- a/lib/libixp/request.c
++++ b/lib/libixp/request.c
+@@ -175,7 +175,7 @@
+ 		else
+ 			r->ofcall.version.version = "unknown";
+ 		r->ofcall.version.msize = r->ifcall.version.msize;
+-		ixp_respond(r, nil);
++		srv->version(r);
+ 		break;
+ 	case TAttach:
+ 		if(!(r->fid = createfid(&p9conn->fidmap, r->ifcall.hdr.fid, p9conn))) {
+@@ -325,6 +325,7 @@
+ 			ixp_respond(r, Enofid);
+ 			return;
+ 		}
++		/*
+ 		if(~r->ifcall.twstat.stat.type) {
+ 			ixp_respond(r, "wstat of type");
+ 			return;
+@@ -341,6 +342,7 @@
+ 			ixp_respond(r, "wstat of muid");
+ 			return;
+ 		}
++		*/
+ 		if(~r->ifcall.twstat.stat.mode && ((r->ifcall.twstat.stat.mode&DMDIR)>>24) != r->fid->qid.type&QTDIR) {
+ 			ixp_respond(r, "wstat on DMDIR bit");
+ 			return;
+@@ -404,7 +406,7 @@
+ 	case TOpen:
+ 	case TCreate:
+ 		if(!error) {
+-			req->ofcall.ropen.iounit = p9conn->rmsg.size - 24;
++			/* req->ofcall.ropen.iounit = p9conn->rmsg.size - 24; */
+ 			req->fid->iounit = req->ofcall.ropen.iounit;
+ 			req->fid->omode = req->ifcall.topen.mode;
+ 			req->fid->qid = req->ofcall.ropen.qid;
